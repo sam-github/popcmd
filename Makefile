@@ -11,6 +11,9 @@ CXXFLAGS  = -g -I/usr/local/include
 
 EXE = popcmd popstat irange
 
+V = #-vv
+S = guest:guest@localhost
+
 .PHONY: build clean empty deps run
 
 build: $(EXE)
@@ -33,6 +36,16 @@ release:
 	gzip -f $(VERSION).tar
 	mv $(VERSION).tar.gz $(VERSION).tgz
 	rm -Rf $(VERSION)
+
+test:
+	popcmd $V $S stat
+	popcmd $V $S list
+	popcmd $V $S list 2
+	popcmd $V $S uidl
+	popcmd $V $S uidl 2
+	popcmd $V $S retr 2
+	popcmd $V $S rset
+	popcmd $V $S noop
 
 clean:
 	-rm -f *~ *.o core *.err
