@@ -4,6 +4,9 @@
 //
 // $Id$
 // $Log$
+// Revision 1.3  1999/10/03 22:52:14  sam
+// implemented the top command
+//
 // Revision 1.2  1999/01/24 02:07:14  sam
 // all commands now take , and - delimited lists of msg ids
 //
@@ -64,6 +67,7 @@ char* USAGE =
 	"     list msgid  returns a size of the indicate message\n"
 	"     dele msgid  deletes the designated message\n"
 	"     retr msgid  retrieves the designated message to stdout\n"
+	"     top  msgid  retrieves the header of the designated message to stdout\n"
 	"\n"
 	" See: RFC 1939 - Post Office Protocol - Version 3\n"
 	;
@@ -163,6 +167,15 @@ void Retr(pop3& p)
 	}
 }
 
+void Top(pop3& p)
+{
+	int m;
+	while(msgid.Next(&m))
+	{
+		if(!p->top(m, 0, &cout)) { failed("top", p); }
+	}
+}
+
 void main(int argc, char* argv[])
 {
 	name = argv[0];
@@ -247,6 +260,10 @@ void main(int argc, char* argv[])
 
 		} else if(!strcmp(optarg, "retr")) {
 			cmd = Retr;
+			SetMsgId(argv[optind]);
+
+		} else if(!strcmp(optarg, "top")) {
+			cmd = Top;
 			SetMsgId(argv[optind]);
 
 		} else {
