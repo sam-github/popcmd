@@ -4,6 +4,9 @@
 //
 // $Id$
 // $Log$
+// Revision 1.4  2000/04/22 08:13:55  sam
+// added uid support
+//
 // Revision 1.3  1999/10/03 22:52:14  sam
 // implemented the top command
 //
@@ -25,63 +28,71 @@
 
 #include "irange.h"
 
-inline void failed(char* cmd, pop3& p)
-{
-	// skip past the "-ERR " part of the response
-	const char* reason = p->response() + strlen("-ERR ");
-
-	cerr << "command \"" << cmd << "\" failed: " << reason << endl;
-	exit(1);
-}
-
+typedef void (*Cmd)(pop3&);
 
 char* name = 0;
 int   verbosity = 1;
 char* host = 0;
 char* user = 0;
 char* pass = 0;
-void (*cmd)(pop3&);
+Cmd   cmd = 0;
 
 IntRange msgid;
+char*    uid;
 
 char* USAGE =
-	"%s - command line tool to manipulate a pop3 server\n"
+	"popcmd - command line tool to manipulate a pop3 server\n"
 	"\n"
 	"usage:\n"
-	"  popcmd  [-hvq] <server> <cmd> [<msgid>]\n"
-	"  pop<cmd> [-hvq] <server> [<msgid>]\n"
+	"  popcmd  [-hvq] <server> <cmd> [...]\n"
 	"\n"
 	"  -h    print this help message\n"
 	"  -v    increase the verbosity (default is 1)\n"
 	"  -q    set verbosity to 0\n"
 	"\n"
-	" If not called as pop<cmd>, where <cmd> is described below, then\n"
-	" the command type must be specified explicitly\n"
-	"\n"
-	" server: username:password@popserver\n"
+	" server:\n"
+	"     username:password@popserver\n"
 	"\n"
 	" cmd:\n"
 	"     stat        returns a pair of integers, the number of messages\n"
 	"                 and total size in octets (bytes) of the mailbox\n"
 	"     list        returns a list of msgids and message size pairs\n"
-	"     list msgid  returns a size of the indicate message\n"
-	"     dele msgid  deletes the designated message\n"
-	"     retr msgid  retrieves the designated message to stdout\n"
-	"     top  msgid  retrieves the header of the designated message to stdout\n"
+	"     list msgs   returns the size of the indicated message\n"
+	"     uidl        returns a list of msgids and unique ids\n"
+	"     uidl msgs   returns the unique ids\n"
+	"     retr msgs   returns the designated message\n"
+	"     top  msgs   returns the header of the designated message\n"
+	"     dele msgs   deletes the designated message\n"
+	"     rset        reset the session state\n"
+	"     noop        noop\n"
+	"     msgby uid   tries to find a msg with the supplied unique id\n"
+	"\n"
+	" msgid:\n"
+	"     loosely formatted, comma seperated, range of msgids to\n"
+	"     act upon.\n"
+	"\n"
+	" Examples:\n"
+	"   popcmd guest:guest@localhost retr 1,2\n"
+	"   popcmd guest:guest@localhost list\n"
 	"\n"
 	" See: RFC 1939 - Post Office Protocol - Version 3\n"
 	;
 
 void usage(ostream& os = cerr)
 {
-	char buf[1024];
+	os << USAGE;
+}
 
-	sprintf(buf, USAGE,
-		name,
-		name
-		);
+inline void failed(char* cmd, pop3& p)
+{
+	if(verbosity)
+	{
+		// skip past the "-ERR " part of the response
+		const char* reason = p->response() + strlen("-ERR ");
 
-	os << buf;
+		cerr << "command \"" << cmd << "\" failed: " << reason << endl;
+	}
+	exit(1);
 }
 
 void FormatError(const char* server)
@@ -126,8 +137,8 @@ void List(pop3& p)
 			cout << size << endl;
 			return;
 		}
-		// otherwise we're dealing with a list, print the first since we looked
-		// ahead and then loop
+		// otherwise we're dealing with a list, print the first since we
+		// looked ahead and then loop
 		int	size;
 		if(!p->list(m, &size)) { failed("list", p); }
 		cout << m << " " << size << endl;
@@ -146,15 +157,38 @@ void List(pop3& p)
 	}
 }
 
-void Dele(pop3& p)
+void Uidl(pop3& p)
 {
 	int m;
 
-	while(msgid.Next(&m))
+	if(msgid.Next(&m))
 	{
-		if(verbosity >= 2) { cout << "dele: " << m << endl; }
+		int lookahead;
 
-		if(!p->dele(m)) { failed("dele", p); }
+		// if there is only one msg, print its uid and return
+		if(!msgid.Next(&lookahead)) {
+			strstream	uid;
+			if(!p->uidl(m, &uid)) { failed("uidl", p); }
+			cout << uid.rdbuf() << endl;
+			return;
+		}
+		// otherwise we're dealing with a list, print the first since we
+		// looked ahead and then loop
+		strstream uid;
+		if(!p->uidl(m, &uid)) { failed("uidl", p); }
+		cout << m << " " << uid.rdbuf() << endl;
+
+		m = lookahead;
+		do {
+			strstream uid;
+			if(!p->uidl(m, &uid)) { failed("uidl", p); }
+			cout << m << " " << uid.rdbuf() << endl;
+
+		} while(msgid.Next(&m));
+	}
+	else
+	{
+		if(!p->uidl(&cout)) { failed("uidl", p); }
 	}
 }
 
@@ -176,9 +210,47 @@ void Top(pop3& p)
 	}
 }
 
+void Dele(pop3& p)
+{
+	int m;
+
+	while(msgid.Next(&m))
+	{
+		if(verbosity >= 2) { cout << "dele: " << m << endl; }
+
+		if(!p->dele(m)) { failed("dele", p); }
+	}
+}
+
+void Rset(pop3& p)
+{
+	if(!p->rset()) { failed("rset", p); }
+}
+
+void Noop(pop3& p)
+{
+	if(!p->noop()) { failed("noop", p); }
+}
+
+void MsgBy(pop3& p)
+{
+	int msg = popuid2msg(p, uid);
+
+	if(!msg) { failed("popuid2msg", p); }
+
+	cout << uid << " -> " << msg << endl;
+}
+
 void main(int argc, char* argv[])
 {
-	name = argv[0];
+	name = strrchr(argv[0], '/');
+	if(name)
+	{
+		*name = '\0';
+		name++;
+	} else {
+		name = argv[0];
+	}
 
 	opterr = 0;
 	for(int c; (c = getopt(argc, argv, "hvq")) != -1;)
@@ -236,15 +308,6 @@ void main(int argc, char* argv[])
 		exit(1);
 	}
 
-	if(verbosity >= 2)
-	{
-		cout << name << ":"
-			<< " user " << user
-			<< " pass " << pass
-			<< " host " << host
-			<< endl;
-	}
-
 	if(optarg = argv[optind++])
 	{
 		if(!strcmp(optarg, "stat")) {
@@ -254,9 +317,9 @@ void main(int argc, char* argv[])
 			cmd = List;
 			SetMsgId(argv[optind], 1);
 
-		} else if(!strcmp(optarg, "dele")) {
-			cmd = Dele;
-			SetMsgId(argv[optind]);
+		} else if(!strcmp(optarg, "uidl")) {
+			cmd = Uidl;
+			SetMsgId(argv[optind], 1);
 
 		} else if(!strcmp(optarg, "retr")) {
 			cmd = Retr;
@@ -266,6 +329,20 @@ void main(int argc, char* argv[])
 			cmd = Top;
 			SetMsgId(argv[optind]);
 
+		} else if(!strcmp(optarg, "dele")) {
+			cmd = Dele;
+			SetMsgId(argv[optind]);
+
+		} else if(!strcmp(optarg, "rset")) {
+			cmd = Rset;
+
+		} else if(!strcmp(optarg, "noop")) {
+			cmd = Noop;
+
+		} else if(!strcmp(optarg, "msgby")) {
+			cmd = MsgBy;
+			uid = argv[optind];
+
 		} else {
 			if(!cmd) { cerr << "unknown command: " << optarg << endl; }
 			exit(1);
@@ -274,7 +351,7 @@ void main(int argc, char* argv[])
 
 	ostream *debug = 0;
 
-	if(verbosity > 2) { debug = &cout; }
+	if(verbosity >= 2) { debug = &cout; }
 
 	pop3 p(debug);
 
@@ -290,7 +367,7 @@ void main(int argc, char* argv[])
 
 	if(!p->pass(pass)) { failed("pass", p); }
 
-	cmd(p);
+	if(cmd) { cmd(p); }
 
 	if(!p->quit()) { failed("quit", p); }
 
