@@ -4,6 +4,9 @@
 //
 // $Id$
 // $Log$
+// Revision 1.2  1999/01/24 02:07:14  sam
+// all commands now take , and - delimited lists of msg ids
+//
 // Revision 1.1  1999/01/23 05:25:01  sam
 // Initial revision
 //
@@ -16,6 +19,8 @@
 #include <fstream.h>
 
 #include <pop3.h>
+
+#include "irange.h"
 
 inline void failed(char* cmd, pop3& p)
 {
@@ -34,7 +39,7 @@ char* user = 0;
 char* pass = 0;
 void (*cmd)(pop3&);
 
-int  msgid = -1;
+IntRange msgid;
 
 char* USAGE =
 	"%s - command line tool to manipulate a pop3 server\n"
@@ -82,9 +87,15 @@ void FormatError(const char* server)
 	exit(1);
 }
 
-void GetMsgId(char* argv[])
+void SetMsgId(const char* idl, int optional = 0)
 {
-	if(optarg = argv[optind++]) { msgid = atoi(optarg); }
+	if(!idl && optional) { return; }
+
+	if(!msgid.Set(idl))
+	{
+		cerr << "failed: invalid msgid list" << endl;
+		exit(1);
+	}
 }
 
 void Stat(pop3& p)
@@ -98,13 +109,32 @@ void Stat(pop3& p)
 
 void List(pop3& p)
 {
-	if(msgid != -1)
+	int m;
+
+	if(msgid.Next(&m))
 	{
+		int lookahead;
+
+		// if there is only one msg, print its size and return
+		if(!msgid.Next(&lookahead)) {
+			int	size;
+			if(!p->list(m, &size)) { failed("list", p); }
+			cout << size << endl;
+			return;
+		}
+		// otherwise we're dealing with a list, print the first since we looked
+		// ahead and then loop
 		int	size;
+		if(!p->list(m, &size)) { failed("list", p); }
+		cout << m << " " << size << endl;
 
-		if(!p->list(msgid, &size)) { failed("list", p); }
+		m = lookahead;
+		do {
+			int	size;
+			if(!p->list(m, &size)) { failed("list", p); }
+			cout << m << " " << size << endl;
 
-		cout << size << endl;
+		} while(msgid.Next(&m));
 	}
 	else
 	{
@@ -114,12 +144,23 @@ void List(pop3& p)
 
 void Dele(pop3& p)
 {
-	if(!p->dele(msgid)) { failed("dele", p); }
+	int m;
+
+	while(msgid.Next(&m))
+	{
+		if(verbosity >= 2) { cout << "dele: " << m << endl; }
+
+		if(!p->dele(m)) { failed("dele", p); }
+	}
 }
 
 void Retr(pop3& p)
 {
-	if(!p->retr(msgid, &cout)) { failed("retr", p); }
+	int m;
+	while(msgid.Next(&m))
+	{
+		if(!p->retr(m, &cout)) { failed("retr", p); }
+	}
 }
 
 void main(int argc, char* argv[])
@@ -198,15 +239,15 @@ void main(int argc, char* argv[])
 
 		} else if(!strcmp(optarg, "list")) {
 			cmd = List;
-			if(argv[optind]) GetMsgId(argv);
+			SetMsgId(argv[optind], 1);
 
 		} else if(!strcmp(optarg, "dele")) {
 			cmd = Dele;
-			GetMsgId(argv);
+			SetMsgId(argv[optind]);
 
 		} else if(!strcmp(optarg, "retr")) {
 			cmd = Retr;
-			GetMsgId(argv);
+			SetMsgId(argv[optind]);
 
 		} else {
 			if(!cmd) { cerr << "unknown command: " << optarg << endl; }
