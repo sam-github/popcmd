@@ -1,36 +1,38 @@
-# Makefile: build mailfetch
+# Makefile: build popcmd
+#
 # $Id$
-# $Log$
-# Revision 1.1  1999/01/23 05:25:01  sam
-# Initial revision
-#
-# Revision 1.1  1998/09/20 07:18:58  sroberts
-# Initial revision
-#
 
-srcdir = .
+VERSION	= popcmds-$(shell cat Version)
 
-LDFLAGS   = -l socket++ -lsocket -L$(srcdir)/..
-CXXFLAGS  = -I$(srcdir)/.. -g #-D__STDC__
+prefix	= /usr/local/stow/popcmd
 
-DEPEND_SOURCES = $(srcdir)/*.cc
+LDFLAGS   = -lsocket++ -lsocket -L/usr/local/lib
+CXXFLAGS  = -g -I/usr/local/include
 
-EXE = popcmd popstat
+EXE = popcmd popstat irange
 
 .PHONY: build clean empty deps run
 
 build: $(EXE)
 
-usage:
-	@mailfetch -h | usemsg mailfetch -
-
 run: build
 	mailfetch -d localhost guest guest
 
-popcmd: ../libsocket++.a
-
 popstat: popcmd
 	ln -s popcmd popstat
+
+install: $(EXE)
+	mkdir -p $(prefix)
+	mkdir -p $(prefix)/bin
+	cp $(EXE) $(prefix)/bin/
+
+release:
+	mkdir -p $(VERSION)
+	pax -w -f - < Manifest | (cd $(VERSION); tar -xf-)
+	tar -cvf $(VERSION).tar $(VERSION)
+	gzip -f $(VERSION).tar
+	mv $(VERSION).tar.gz $(VERSION).tgz
+	rm -Rf $(VERSION)
 
 clean:
 	-rm -f *~ *.o core *.err
