@@ -8,6 +8,9 @@
 //
 // $Id$
 // $Log$
+// Revision 1.2  1999/07/16 15:59:16  sam
+// error in initialization of range, pointer not being zeroed
+//
 // Revision 1.1  1999/01/24 02:07:14  sam
 // Initial revision
 //
@@ -41,12 +44,12 @@ private:
 	}
 
 public:
-	IntRange() 
+	IntRange() : list_(0), cur_(0)
 	{
 		Clear();
 	}
 
-	IntRange(const char* list)
+	IntRange(const char* list) : list_(0), cur_(0)
 	{
 		Set(list);
 	}
